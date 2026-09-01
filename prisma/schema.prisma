@@ -1,0 +1,372 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  CUSTOMER
+  PARTNER
+  ADMIN
+  ARTIST
+  VENUE_OWNER
+  HOST
+  STAFF
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+}
+
+enum ApplicationType {
+  ARTIST
+  VENUE
+  HOST
+}
+
+enum ApplicationStatus {
+  DRAFT
+  PENDING
+  UNDER_REVIEW
+  REQUEST_MORE_INFO
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum KycStatus {
+  NOT_STARTED
+  PENDING
+  BASIC_VERIFIED
+  IDENTITY_VERIFIED
+  BUSINESS_VERIFIED
+  REJECTED
+}
+
+enum PartnerDocumentType {
+  GOVERNMENT_ID
+  ADDRESS_PROOF
+  BUSINESS_DOCUMENT
+  BANK_DOCUMENT
+  TAX_DOCUMENT
+  PORTFOLIO
+  VENUE_MEDIA
+  PROFILE_MEDIA
+  OTHER
+}
+
+enum BookingStatus {
+  INTERESTED
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum EarlyAccessStatus {
+  PENDING
+  CONFIRMED
+  INVITED
+  REVOKED
+}
+
+enum NotificationType {
+  SYSTEM
+  AUTH
+  BOOKING
+  REFERRAL
+  EARLY_ACCESS
+  PARTNER
+  KYC
+  ADMIN
+  EXPERIENCE
+}
+
+enum ExperienceStatus {
+  DRAFT
+  PUBLISHED
+  SOLD_OUT
+  CANCELLED
+  COMPLETED
+  ARCHIVED
+}
+
+model User {
+  id                String             @id @default(uuid())
+  name              String
+  email             String             @unique
+  passwordHash      String?
+  role              UserRole           @default(CUSTOMER)
+  authProvider      AuthProvider       @default(EMAIL)
+  googleId          String?            @unique
+  avatarUrl         String?
+  bio               String?
+  phone             String?
+  city              String?
+  interests         String?            // JSON string array
+  emailVerified     Boolean            @default(false)
+  verifyToken       String?
+  verifyTokenExpiry DateTime?
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+  otpCode           String?
+  otpExpiry         DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  earlyAccess       EarlyAccess?
+  referralsMade     Referral[]         @relation("Referrer")
+  referredBy        Referral?          @relation("ReferredUser")
+  partnerProfile    PartnerProfile?
+  bookings          Booking[]
+  notifications     Notification[]
+  adminNotes        AdminNote[]
+  auditLogs         AuditLog[]
+  reviews           ExperienceReview[]
+  memories          ExperienceMemory[]
+
+  @@index([email])
+  @@index([role])
+  @@index([googleId])
+}
+
+model EarlyAccess {
+  id           String            @id @default(uuid())
+  userId       String?           @unique
+  user         User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  email        String            @unique
+  city         String
+  interests    String            // JSON array of strings
+  status       EarlyAccessStatus @default(PENDING)
+  referralCode String            @unique
+  referredById String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([referralCode])
+  @@index([email])
+}
+
+model Referral {
+  id             String         @id @default(uuid())
+  referrerId     String
+  referrer       User           @relation("Referrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredUserId String         @unique
+  referredUser   User           @relation("ReferredUser", fields: [referredUserId], references: [id], onDelete: Cascade)
+  status         String         @default("QUALIFIED") // PENDING | QUALIFIED
+  createdAt      DateTime       @default(now())
+
+  @@index([referrerId])
+}
+
+model PartnerApplication {
+  id           String            @id @default(uuid())
+  type         ApplicationType
+  status       ApplicationStatus @default(PENDING)
+  name         String
+  email        String
+  phone        String
+  city         String
+  companyName  String?
+  website      String?
+  instagram    String?
+  portfolioUrl String?
+  discipline   String?
+  venueType    String?
+  capacity     String?
+  conceptTitle String?
+  description  String?
+  data         String            @default("{}") // JSON string payload
+  fileUrls     String            @default("[]") // JSON string array
+  reviewedBy   String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  adminNotes   AdminNote[]
+  documents    PartnerDocument[]
+
+  @@index([email])
+  @@index([type])
+  @@index([status])
+}
+
+model PartnerProfile {
+  id           String            @id @default(uuid())
+  userId       String            @unique
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         ApplicationType
+  businessName String?
+  bio          String?
+  website      String?
+  instagram    String?
+  portfolioUrl String?
+  kycStatus    KycStatus         @default(PENDING)
+  kycData      String?           // JSON payload for KYC metadata
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  documents    PartnerDocument[]
+  verifications PartnerVerification[]
+
+  @@index([userId])
+  @@index([kycStatus])
+}
+
+model PartnerVerification {
+  id               String         @id @default(uuid())
+  partnerProfileId String
+  partnerProfile   PartnerProfile @relation(fields: [partnerProfileId], references: [id], onDelete: Cascade)
+  level            KycStatus
+  notes            String?
+  reviewedBy       String
+  createdAt        DateTime       @default(now())
+
+  @@index([partnerProfileId])
+}
+
+model PartnerDocument {
+  id               String              @id @default(uuid())
+  applicationId    String?
+  application      PartnerApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  partnerProfileId String?
+  partnerProfile   PartnerProfile?     @relation(fields: [partnerProfileId], references: [id], onDelete: Cascade)
+  documentType     PartnerDocumentType @default(PORTFOLIO)
+  title            String?
+  fileUrl          String
+  fileType         String
+  fileSize         Int?
+  isPrivate        Boolean             @default(true)
+  uploadedAt       DateTime            @default(now())
+
+  @@index([applicationId])
+  @@index([partnerProfileId])
+}
+
+model Experience {
+  id             String           @id @default(uuid())
+  title          String
+  slug           String           @unique
+  category       String
+  city           String
+  tagline        String
+  description    String
+  price          Float
+  currency       String           @default("INR")
+  capacity       Int
+  availableSeats Int
+  date           String
+  venueName      String
+  artistName     String?
+  heroImage      String
+  galleryImages  String           // JSON array of image URLs
+  published      Boolean          @default(true)
+  featured       Boolean          @default(false)
+  status         ExperienceStatus @default(PUBLISHED)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  bookings       Booking[]
+  reviews        ExperienceReview[]
+  memories       ExperienceMemory[]
+
+  @@index([slug])
+  @@index([city])
+  @@index([category])
+}
+
+model Booking {
+  id           String        @id @default(uuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experienceId String
+  experience   Experience    @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  seats        Int           @default(1)
+  totalPrice   Float
+  status       BookingStatus @default(INTERESTED)
+  paymentId    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([experienceId])
+  @@unique([userId, experienceId, status])
+}
+
+model ExperienceReview {
+  id           String     @id @default(uuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experienceId String
+  experience   Experience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  rating       Int        @default(5)
+  title        String?
+  content      String
+  createdAt    DateTime   @default(now())
+
+  @@index([userId])
+  @@index([experienceId])
+}
+
+model ExperienceMemory {
+  id           String     @id @default(uuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experienceId String
+  experience   Experience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  caption      String?
+  mediaUrl     String
+  mediaType    String     @default("IMAGE")
+  visibility   String     @default("PUBLIC")
+  createdAt    DateTime   @default(now())
+
+  @@index([userId])
+  @@index([experienceId])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      NotificationType @default(SYSTEM)
+  actionUrl String?
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId])
+}
+
+model AdminNote {
+  id            String              @id @default(uuid())
+  applicationId String?
+  application   PartnerApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  adminId       String
+  admin         User                @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  content       String
+  createdAt     DateTime            @default(now())
+
+  @@index([applicationId])
+  @@index([adminId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  adminId    String?
+  admin      User?    @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  action     String
+  resource   String
+  resourceId String?
+  details    String?
+  createdAt  DateTime @default(now())
+
+  @@index([adminId])
+}

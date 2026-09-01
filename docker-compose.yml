@@ -1,0 +1,76 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: encoreats_app
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      NODE_ENV: production
+
+      DATABASE_URL: postgresql://encoreats:encoreats_secret_pass@postgres:5432/encoreats_db?schema=public
+
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER}
+
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+
+      EMAIL_FROM: ${EMAIL_FROM}
+
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_SECRET: ${ADMIN_SECRET}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    command: >
+      sh -c "npx prisma migrate deploy && npm start"
+
+    networks:
+      - encoreats_network
+
+  postgres:
+    image: postgres:16-alpine
+
+    container_name: encoreats_postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: encoreats
+      POSTGRES_PASSWORD: encoreats_secret_pass
+      POSTGRES_DB: encoreats_db
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U encoreats -d encoreats_db" ]
+
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+    networks:
+      - encoreats_network
+
+volumes:
+  postgres_data:
+
+networks:
+  encoreats_network:
+    driver: bridge
